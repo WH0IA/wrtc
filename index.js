@@ -47,6 +47,8 @@ peerConnection.addEventListener('track', event => {
   }
 });
 
+connect();
+
 // Устанавливаем соединение с удаленным клиентом
 function connect() {
   // Получаем ссылку на удаленный клиент, например, через сигнальный сервер
