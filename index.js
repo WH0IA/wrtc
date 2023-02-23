@@ -88,6 +88,8 @@ function onIceCandidate(pc, event) {
   try {
     const candidate = event.candidate;
 
+    console.log('Candidate', candidate);
+
     if (candidate) {
       const otherPc = pc === pc1 ? pc2 : pc1;
       otherPc.addIceCandidate(candidate);
