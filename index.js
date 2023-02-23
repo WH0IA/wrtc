@@ -1,82 +1,102 @@
-// Создаем объекты для видео и аудио
+const localVideo = document.getElementById('localVideo');
+const remoteVideo = document.getElementById('remoteVideo');
+const startButton = document.getElementById('startButton');
+const callButton = document.getElementById('callButton');
+const hangupButton = document.getElementById('hangupButton');
+
+let localStream;
+let remoteStream;
+let pc1;
+let pc2;
+
+const offerOptions = {
+  offerToReceiveVideo: 1,
+  offerToReceiveAudio: 1
+};
+
 const constraints = {
-    video: true,
-    // audio: true
+  video: true,
+  audio: false
 };
-  
-  // Получаем ссылки на видео элементы на странице
-const localVideo = document.querySelector('#localVideo');
-const remoteVideo = document.querySelector('#remoteVideo');
 
-// Создаем объекты для соединения и передачи данных
-const configuration = {
-  iceServers: [{
-    urls: 'stun:stun.l.google.com:19302' // STUN сервер для обхода NAT
-  }]
-};
-const peerConnection = new RTCPeerConnection(configuration);
-const dataChannel = peerConnection.createDataChannel('chat');
+startButton.addEventListener('click', start);
+callButton.addEventListener('click', call);
+hangupButton.addEventListener('click', hangup);
 
-// Отображаем локальный видеопоток на странице
-navigator.mediaDevices.getUserMedia(constraints)
-  .then(localStream => {
-    localVideo.srcObject = localStream ;
-    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-  })
-  .catch(error => console.error('Ошибка получения локального видеопотока:', error));
-
-// Отправляем и получаем ICE кандидатов для установки соединения
-peerConnection.addEventListener('icecandidate', event => {
-  if (event.candidate) {
-    sendIceCandidate(event.candidate);
+async function start() {
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    localVideo.srcObject = localStream;
+  } catch (error) {
+    console.error('Ошибка получения медиа-устройств', error);
   }
-});
-function sendIceCandidate(candidate) {
-  // Отправляем ICE кандидата на удаленный клиент
 }
 
-// Обрабатываем ICE кандидаты от удаленного клиента
-function handleIceCandidate(candidate) {
-  peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+async function call() {
+  try {
+    pc1 = new RTCPeerConnection();
+    pc2 = new RTCPeerConnection();
+
+    pc1.addEventListener('icecandidate', e => onIceCandidate(pc1, e));
+    pc2.addEventListener('icecandidate', e => onIceCandidate(pc2, e));
+    pc2.addEventListener('track', gotRemoteStream);
+
+    localStream.getTracks().forEach(track => {
+      pc1.addTrack(track, localStream);
+    });
+
+    const offer = await pc1.createOffer(offerOptions);
+    await onCreateOfferSuccess(offer);
+  } catch (error) {
+    console.error('Ошибка установки соединения', error);
+  }
 }
 
-// Устанавливаем удаленный видеопоток после успешного соединения
-peerConnection.addEventListener('track', event => {
-  if (event.track.kind === 'video') {
-    remoteVideo.srcObject = event.streams[0];
+async function hangup() {
+  try {
+    pc1.close();
+    pc2.close();
+    pc1 = null;
+    pc2 = null;
+  } catch (error) {
+    console.error('Ошибка завершения соединения', error);
   }
-});
+}
 
-connect();
+async function onCreateOfferSuccess(offer) {
+  try {
+    await pc1.setLocalDescription(offer);
+    await pc2.setRemoteDescription(offer);
 
-// Устанавливаем соединение с удаленным клиентом
-function connect() {
-  // Получаем ссылку на удаленный клиент, например, через сигнальный сервер
-  const remotePeer = new RTCPeerConnection(configuration);
-  remotePeer.addEventListener('datachannel', event => {
-    // Обрабатываем данные из канала связи
-  });
-  remotePeer.addEventListener('icecandidate', event => {
-    if (event.candidate) {
-      sendIceCandidate(event.candidate);
+    const answer = await pc2.createAnswer();
+    await onCreateAnswerSuccess(answer);
+  } catch (error) {
+    console.error('Ошибка создания offer', error);
+  }
+}
+
+async function onCreateAnswerSuccess(answer) {
+  try {
+    await pc2.setLocalDescription(answer);
+    await pc1.setRemoteDescription(answer);
+  } catch (error) {
+    console.error('Ошибка создания answer', error);
+  }
+}
+
+function onIceCandidate(pc, event) {
+  try {
+    const candidate = event.candidate;
+
+    if (candidate) {
+      const otherPc = pc === pc1 ? pc2 : pc1;
+      otherPc.addIceCandidate(candidate);
     }
-  });
-  remotePeer.addEventListener('track', event => {
-    if (event.track.kind === 'video') {
-      remoteVideo.srcObject = event.streams[0];
-    }
-  });
+  } catch (error) {
+    console.error('Ошибка отправки ICE кандидата', error);
+  }
+}
 
-  // Создаем SDP предложение для установки соединения
-  peerConnection.createOffer()
-    .then(offer => {
-      peerConnection.setLocalDescription(offer);
-      remotePeer.setRemoteDescription(offer);
-      return remotePeer.createAnswer();
-    })
-    .then(answer => {
-      remotePeer.setLocalDescription(answer);
-      peerConnection.setRemoteDescription(answer);
-    })
-    .catch(error => console.error('Ошибка установки соединения:', error));
+function gotRemoteStream(event) {
+  remoteVideo.srcObject = event.streams[0];
 }
